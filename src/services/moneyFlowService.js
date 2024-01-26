@@ -1,7 +1,7 @@
 const moneyFlowDao = require('../models/moneyFlowDao');
 const fixedMoneyFlowDao = require('../models/fixedMoneyFlowDao');
 const allowanceDao = require('../models/allowanceDao');
-const middleWare = require('../middlewares/index');
+const { QueryBuilder } = require('../middlewares/index');
 const flowTypeService = require('../services/flowTypeService');
 const categoryDao = require('../models/categoryDao');
 const budgetDao = require('../models/budgetDao');
@@ -12,26 +12,30 @@ const {
   ConcatenatedMoneyFlowsHandler,
 } = require('../utils/arrayUtil');
 
-const search = async (data) => {
-  const query1 = await middleWare.queryBuilder1(data);
-  const result1 = await moneyFlowDao.getConditionalGeneralInfo(query1);
-  for (const element of result1) {
+const getOrderedMoneyFlows = async (data) => {
+  const moneyFlowsQueryBuilder = new QueryBuilder(data, 'money_flows');
+  const fixedMoneyFLowsQueryBuilder = new QueryBuilder(data, 'fixed_money_flows');
+
+  const queryMoneyFlows = moneyFlowsQueryBuilder.buildMoneyFLowsQuery();
+  const resultMoneyFlows = await moneyFlowDao.getConditionalGeneralInfo(queryMoneyFlows);
+  for (const element of resultMoneyFlows) {
     element.fixed_status = 0;
   }
 
-  const query2 = await middleWare.queryBuilder2(data);
-  const result2 = await moneyFlowDao.getConditionalFixedInfo(query2);
-  for (const element of result2) {
+  const queryFixedMoneyFLows = fixedMoneyFLowsQueryBuilder.buildMoneyFLowsQuery(
+    data,
+    'fixed_money_flows',
+  );
+  const resultFixedMoneyFlows = await moneyFlowDao.getConditionalFixedInfo(queryFixedMoneyFLows);
+  for (const element of resultFixedMoneyFlows) {
     element.fixed_status = 1;
   }
 
-  let result = [];
-  if (data.dateOrder === 'DESC') {
-    result = result1.concat(result2).sort((a, b) => b.date - a.date);
-  } else {
-    result = result1.concat(result2).sort((a, b) => a.date - b.date);
-  }
-  return result;
+  const everyMoneyFlowsResults = resultMoneyFlows.concat(resultFixedMoneyFlows);
+
+  return everyMoneyFlowsResults.sort((a, b) => {
+    return data.dateOrder === 'DESC' ? b.date - a.date : a.date - b.date;
+  });
 };
 
 const getChartDataByYear = async (userId, familyId, year) => {
@@ -41,24 +45,7 @@ const getChartDataByYear = async (userId, familyId, year) => {
   let monthlyConsumption = [];
 
   // const monthNums = Array.from({ length: 12 }, (_, index) => index + 1);
-  /**
-   * 숫자가 많아지면 직접 쓰기 힘듭니다.
-   *
-   * const monthIndex = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-   *
-   * =>
-   *   const monthNums = Array.from({ length: 12 }, (_, index) => index + 1);
-   *
-   *   or
-   *
-   *  let i = 1;
-   *   let monthNums = [];
-   *   while (i <= 12) {
-   *     monthNums.push(i);
-   *     i++;
-   *   }
-   *
-   */
+  // 숫자가 많아지면 직접 쓰기 힘듭니다.
 
   if (familyId) {
     try {
@@ -283,7 +270,7 @@ const getChartDataByCategory = async (userId, familyId, year, month) => {
 
   const totalConsumption = sumOfFlowsByCategory.reduce((sum, element) => sum + element.spending, 0);
 
-  const normalizedByCategory = sumOfFlowsByCategory.map((category) => ({
+  return sumOfFlowsByCategory.map((category) => ({
     // totalConsumption이 0일 때, 카테고리별 지출이 0으로 할당됩니다.
     ...category,
     spending:
@@ -291,7 +278,6 @@ const getChartDataByCategory = async (userId, familyId, year, month) => {
         ? `${Math.round((Number(category.spending) * 100) / totalConsumption)}%`
         : '0%',
   }));
-  return normalizedByCategory;
 };
 
 const postMoneyFlow = async (userId, type, categoryId, memo, amount, year, month, date) => {
@@ -418,7 +404,7 @@ const deleteMoneyFlow = async (id, userId) => {
 };
 
 module.exports = {
-  search,
+  search: getOrderedMoneyFlows,
   getChartDataByYear,
   getChartDataByCategory,
   postMoneyFlow,

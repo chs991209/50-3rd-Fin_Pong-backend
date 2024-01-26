@@ -2,60 +2,54 @@ const jwt = require('jsonwebtoken');
 const { v4 } = require('uuid');
 const secretKey = process.env.TYPEORM_SECRET_KEY;
 
-const queryBuilder1 = async (data) => {
-  let query = 'SELECT';
-  query = query + ' mf.user_id, u.name, ft.status, mf.date, c.category, mf.memo, mf.amount';
-  query = query + ' FROM money_flows mf';
-  query = query + ' JOIN categories c ON mf.category_id = c.id';
-  query = query + ' JOIN flow_type ft ON mf.flow_type_id = ft.id';
-  query = query + ' JOIN users_families uf ON mf.user_id = uf.user_id';
-  query = query + ' JOIN users u ON mf.user_id = u.id';
-  query = query + ` WHERE mf.year = ${data.year}`;
-  query = query + ` AND mf.month = ${data.month}`;
-  query = query + ` AND uf.family_id = ${data.familyId}`;
-  if (data.flowTypeId) {
-    query = query + ` AND mf.flow_type_id = ${data.flowTypeId}`;
+class QueryBuilder {
+  constructor(data, tableName) {
+    this._data = data;
+    this._tableName = tableName;
   }
-  if (data.userId) {
-    query = query + ` AND uf.user_id = ${data.userId}`;
-  }
-  if (data.categoryId) {
-    query = query + ` AND c.id = ${data.categoryId}`;
-  }
-  if (data.memo) {
-    query = query + ` AND mf.memo LIKE '%${data.memo}%'`;
-  }
-  query = query + ` ORDER BY mf.date ${data.dateOrder}`;
 
-  return query;
-};
+  buildMoneyFLowsQuery() {
+    let conditions = [
+      `${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.year = ${this._data.year}`,
+      `${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.month = ${this._data.month}`,
+      `uf.family_id = ${this._data.familyId}`,
+    ];
 
-const queryBuilder2 = async (data) => {
-  let query = 'SELECT';
-  query = query + ' fmf.user_id, u.name, ft.status, fmf.date, c.category, fmf.memo, fmf.amount';
-  query = query + ' FROM fixed_money_flows fmf';
-  query = query + ' JOIN categories c ON fmf.category_id = c.id';
-  query = query + ' JOIN flow_type ft ON fmf.flow_type_id = ft.id';
-  query = query + ' JOIN users_families uf ON fmf.user_id = uf.user_id';
-  query = query + ' JOIN users u ON fmf.user_id = u.id';
-  query = query + ` WHERE fmf.year = ${data.year}`;
-  query = query + ` AND fmf.month = ${data.month}`;
-  query = query + ` AND uf.family_id = ${data.familyId}`;
-  if (data.flowTypeId) {
-    query = query + ` AND fmf.flow_type_id = ${data.flowTypeId}`;
+    if (this._data.flowTypeId)
+      conditions.push(
+        `${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.flow_type_id = ${this._data.flowTypeId}`,
+      );
+    if (this._data.userId) conditions.push(`uf.user_id = ${this._data.userId}`);
+    if (this._data.categoryId) conditions.push(`c.id = ${this._data.categoryId}`);
+    if (this._data.memo)
+      conditions.push(
+        `${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.memo LIKE '%${this._data.memo}%'`,
+      );
+
+    let query = `
+      SELECT 
+        ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.user_id, 
+        u.name, 
+        ft.status, 
+        ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.date, 
+        c.category, 
+        ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.memo, 
+        ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.amount
+      FROM 
+        ${this._tableName === 'money_flows' ? 'money_flows mf' : 'fixed_money_flows fmf'}
+        JOIN categories c ON ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.category_id = c.id
+        JOIN flow_type ft ON ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.flow_type_id = ft.id
+        JOIN users_families uf ON ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.user_id = uf.user_id
+        JOIN users u ON ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.user_id = u.id
+      WHERE 
+        ${conditions.join(' AND ')}
+    `;
+
+    query += ` ORDER BY ${this._tableName === 'money_flows' ? 'mf' : 'fmf'}.date ${this._data.dateOrder}`;
+
+    return query;
   }
-  if (data.userId) {
-    query = query + ` AND uf.user_id = ${data.userId}`;
-  }
-  if (data.categoryId) {
-    query = query + ` AND c.id = ${data.categoryId}`;
-  }
-  if (data.memo) {
-    query = query + ` AND fmf.memo LIKE '%${data.memo}%'`;
-  }
-  query = query + ` ORDER BY fmf.date ${data.dateOrder}`;
-  return query;
-};
+}
 
 const createToken = (email) => {
   return jwt.sign({ email }, secretKey, { expiresIn: '1h' });
@@ -69,8 +63,7 @@ const createCustomUuid = () => {
 };
 
 module.exports = {
-  queryBuilder1,
-  queryBuilder2,
+  QueryBuilder,
   createToken,
   createCustomUuid,
 };
